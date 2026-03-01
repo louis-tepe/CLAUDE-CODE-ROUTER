@@ -21,7 +21,7 @@ _glm_state() {
 _glm_proxy_start() {
   if ! lsof -i:8082 -sTCP:LISTEN &>/dev/null; then
     echo "Starting GLM-5 proxy..."
-    nohup "$GLM_PROXY_VENV" "$GLM_PROXY_PY" >"$GLM_PROXY_LOG" 2>&1 &
+    PYTHONUNBUFFERED=1 nohup "$GLM_PROXY_VENV" -u "$GLM_PROXY_PY" >"$GLM_PROXY_LOG" 2>&1 &
     sleep 2
     if lsof -i:8082 -sTCP:LISTEN &>/dev/null; then
       echo "Proxy started on port 8082"

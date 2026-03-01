@@ -63,7 +63,7 @@ ok "Proxy files updated (your .env is preserved)"
 
 # Update dependencies
 info "Updating Python dependencies..."
-"$PROXY_DIR/venv/bin/pip" install -q -r "$PROXY_DIR/requirements.txt"
+"$PROXY_DIR/venv/bin/pip" install -q -r "$PROXY_DIR/requirements.txt" || error "Failed to update Python dependencies"
 ok "Dependencies updated"
 
 echo ""
@@ -103,10 +103,10 @@ if lsof -i:8082 -sTCP:LISTEN &>/dev/null; then
     info "Restarting proxy..."
     PROXY_PID=$(lsof -ti:8082 2>/dev/null)
     if [ -n "$PROXY_PID" ]; then
-        kill $PROXY_PID 2>/dev/null
+        kill "$PROXY_PID" 2>/dev/null
         sleep 1
     fi
-    nohup "$PROXY_DIR/venv/bin/python" "$PROXY_DIR/proxy.py" &>/tmp/claude-proxy.log &
+    PYTHONUNBUFFERED=1 nohup "$PROXY_DIR/venv/bin/python" -u "$PROXY_DIR/proxy.py" &>/tmp/claude-proxy.log &
     sleep 2
     if lsof -i:8082 -sTCP:LISTEN &>/dev/null; then
         ok "Proxy restarted"

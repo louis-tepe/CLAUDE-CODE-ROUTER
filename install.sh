@@ -373,7 +373,7 @@ echo ""
 info "Testing proxy..."
 
 # Start proxy in background
-"$PROXY_DIR/venv/bin/python" "$PROXY_DIR/proxy.py" &>/tmp/claude-proxy.log &
+PYTHONUNBUFFERED=1 "$PROXY_DIR/venv/bin/python" -u "$PROXY_DIR/proxy.py" &>/tmp/claude-proxy.log &
 PROXY_PID=$!
 
 # Wait up to 10 seconds for proxy to be ready

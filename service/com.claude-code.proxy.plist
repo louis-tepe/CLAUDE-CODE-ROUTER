@@ -7,6 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>VENV_PYTHON_PLACEHOLDER</string>
+        <string>-u</string>
         <string>PROXY_PY_PLACEHOLDER</string>
     </array>
     <key>WorkingDirectory</key>
@@ -23,6 +24,8 @@
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
     </dict>
 </dict>
 </plist>

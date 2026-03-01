@@ -23,12 +23,18 @@ from starlette.background import BackgroundTask
 from contextlib import asynccontextmanager
 import httpx
 import os
+import sys
 import json
 import logging
 import asyncio
 import random
 import uuid
 import time
+
+# Force unbuffered output so logs appear immediately in file
+os.environ["PYTHONUNBUFFERED"] = "1"
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 # ANSI colors
 GREEN = "\033[92m"
@@ -45,6 +51,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("proxy")
+
+# Suppress verbose httpx/httpcore logs (proxy logs already cover routing + status)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def log_ok(rid: str, msg: str):
@@ -89,6 +99,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Claude Code Proxy — GLM-5 Router", lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Request logging middleware — logs every incoming request
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def log_all_requests(request: Request, call_next):
+    """Log every incoming request for visibility, including sub-agent calls."""
+    method = request.method
+    path = request.url.path
+    client = request.client.host if request.client else "unknown"
+    logger.debug(f"→ {method} {path} from {client}")
+    response = await call_next(request)
+    return response
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -948,7 +973,8 @@ async def proxy_messages(request: Request):
                     if is_zai_route and tier:
                         circuit_breaker.record_success(tier)
                     await stats.record(stats_tier, time.time() - request_start)
-                    log_ok(rid, f"Stream started ({response.status_code})")
+                    retry_info = f" retry {attempt+1}/{max_attempts}" if attempt > 0 else ""
+                    log_ok(rid, f"Stream started ({response.status_code}){retry_info}")
                     return StreamingResponse(
                         safe_stream_wrapper(response.aiter_bytes(), rid, original_model, stats_tier=stats_tier, price_tier=price_tier, start_time=request_start),
                         media_type="text/event-stream",
@@ -994,12 +1020,13 @@ async def proxy_messages(request: Request):
                         elapsed = time.time() - request_start
                         await stats.record(stats_tier, elapsed)
                         inp, out = _extract_tokens_from_response(response.content)
+                        retry_info = f" retry {attempt+1}/{max_attempts}" if attempt > 0 else ""
                         if inp or out:
                             await stats.record_tokens(stats_tier, inp, out)
                             fmt = stats._fmt_tokens
-                            log_ok(rid, f"OK {fmt(inp)} in / {fmt(out)} out ({elapsed:.1f}s)")
+                            log_ok(rid, f"OK {fmt(inp)} in / {fmt(out)} out ({elapsed:.1f}s){retry_info}")
                         else:
-                            log_ok(rid, f"OK ({elapsed:.1f}s)")
+                            log_ok(rid, f"OK ({elapsed:.1f}s){retry_info}")
                     else:
                         await stats.record(stats_tier, time.time() - request_start, is_error=True)
                     # Scale tokens in non-streaming response for correct cost display
@@ -1021,11 +1048,22 @@ async def proxy_messages(request: Request):
                     continue
                 # Timeout on Z.AI → try Anthropic
                 if is_zai_route:
+                    await stats.record(stats_tier, time.time() - request_start, is_error=True, is_fallback=True)
                     log_warn(rid, "Z.AI timeout, falling back to Anthropic")
                     try:
                         fallback_headers = _build_anthropic_headers(original_headers)
                         fb_response = await client.post(f"{ANTHROPIC_BASE_URL}/v1/messages", json=original_data, headers=fallback_headers)
-                        log_ok(rid, f"Anthropic fallback after timeout: {fb_response.status_code}")
+                        elapsed = time.time() - request_start
+                        if fb_response.status_code < 400:
+                            inp, out = _extract_tokens_from_response(fb_response.content)
+                            if inp or out:
+                                await stats.record_tokens("anthropic", inp, out)
+                                fmt = stats._fmt_tokens
+                                log_ok(rid, f"Anthropic fallback OK {fmt(inp)} in / {fmt(out)} out ({elapsed:.1f}s)")
+                            else:
+                                log_ok(rid, f"Anthropic fallback OK ({elapsed:.1f}s)")
+                        else:
+                            log_err(rid, f"Anthropic fallback also failed: {fb_response.status_code}")
                         return Response(content=fb_response.content, status_code=fb_response.status_code, headers=strip_encoding_headers(fb_response.headers))
                     except Exception as fb_err:
                         log_err(rid, f"Anthropic fallback also failed: {fb_err}")
@@ -1049,6 +1087,8 @@ async def proxy_messages(request: Request):
                     continue
                 return JSONResponse(status_code=500, content={"error": f"Proxy error: {e}"})
 
+        log_err(rid, f"Max retries exhausted ({max_attempts} attempts)")
+        await stats.record(stats_tier, time.time() - request_start, is_error=True)
         return JSONResponse(status_code=500, content={"error": "Max retries exceeded"})
 
 
@@ -1069,10 +1109,14 @@ async def proxy_count_tokens(request: Request):
     log_route(rid, f"count_tokens {original_model} → Anthropic")
 
     client = request.app.state.http_client
+    count_start = time.time()
     try:
         response = await client.post(target_url, json=data, headers=target_headers)
+        elapsed = time.time() - count_start
         if response.status_code >= 400:
             log_err(rid, f"count_tokens HTTP {response.status_code}: {response.text[:300]}")
+        else:
+            log_ok(rid, f"count_tokens OK ({elapsed:.1f}s)")
         return Response(
             content=response.content,
             status_code=response.status_code,
@@ -1184,6 +1228,7 @@ async def catch_all(request: Request, path: str):
             if response.status_code >= 400:
                 error_body = await response.aread()
                 await response.aclose()
+                log_err(rid, f"catch-all stream error {response.status_code}: {error_body.decode(errors='replace')[:300]}")
                 return Response(content=error_body, status_code=response.status_code, headers=strip_encoding_headers(response.headers))
             return StreamingResponse(
                 safe_stream_wrapper(response.aiter_bytes(), rid, path, stats_tier="anthropic", start_time=catch_start),
@@ -1192,6 +1237,11 @@ async def catch_all(request: Request, path: str):
             )
         else:
             response = await client.request(method, target_url, content=body, headers=target_headers)
+            elapsed = time.time() - catch_start
+            if response.status_code < 400:
+                log_ok(rid, f"catch-all OK ({response.status_code}, {elapsed:.1f}s)")
+            else:
+                log_err(rid, f"catch-all HTTP {response.status_code}: {response.text[:300]}")
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -1233,4 +1283,4 @@ if __name__ == "__main__":
     print(f"Listen: {host}:{PORT} | Log: {LOG_LEVEL}")
     print("=" * 60)
 
-    uvicorn.run(app, host=host, port=PORT, log_level="info")
+    uvicorn.run(app, host=host, port=PORT, log_level="info", access_log=False)

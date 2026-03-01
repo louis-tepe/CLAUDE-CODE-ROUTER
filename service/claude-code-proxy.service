@@ -5,9 +5,10 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=PROXY_DIR_PLACEHOLDER
-ExecStart=VENV_PYTHON_PLACEHOLDER PROXY_PY_PLACEHOLDER
+ExecStart=VENV_PYTHON_PLACEHOLDER -u PROXY_PY_PLACEHOLDER
 Restart=on-failure
 RestartSec=5
+Environment=PYTHONUNBUFFERED=1
 StandardOutput=append:/tmp/claude-proxy.log
 StandardError=append:/tmp/claude-proxy.log
 
