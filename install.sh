@@ -78,9 +78,12 @@ echo ""
 echo "Platform: $PLATFORM"
 echo ""
 echo "This will install:"
-echo "  - GLM-5.1 proxy (Haiku/Sonnet → Z.AI, Opus → Anthropic)"
+echo "  - GLM-5.1 proxy (Hybrid mode: Sonnet/Haiku → Z.AI, Opus → Anthropic)"
 echo "  - Claude Code config (agents, plugins, statusline)"
-echo "  - Shell integration (auto-start proxy)"
+echo "  - Shell integration with 3 routing modes:"
+echo "      glm-on   = Hybrid (Sonnet/Haiku → Z.AI proxy, Opus → Anthropic)"
+echo "      glm-full = Full GLM (tout → Z.AI direct)"
+echo "      glm-off  = Full Claude (tout → Anthropic OAuth)"
 echo ""
 
 # ------------------------------------------------------------------------------
@@ -190,7 +193,6 @@ if [ ! -d "$PROXY_DIR" ]; then
     else
         cp "$SCRIPT_DIR/proxy/.env.example" "$PROXY_DIR/.env"
 
-        # Check if API key was provided via environment variable
         if [ -n "$ZAI_API_KEY" ]; then
             ZAI_KEY="$ZAI_API_KEY"
             ok "Using Z.AI API key from environment"
@@ -210,6 +212,9 @@ if [ ! -d "$PROXY_DIR" ]; then
                 sed -i "s|your-zai-api-key-here|$ZAI_KEY|g" "$PROXY_DIR/.env"
             fi
             ok "API key configured"
+
+            echo "$ZAI_KEY" > "$CLAUDE_DIR/.zai-api-key"
+            ok "API key saved to $CLAUDE_DIR/.zai-api-key (for Full GLM mode)"
         else
             warn "No API key provided. Edit ~/claude-code-proxy/.env before using the proxy."
         fi
@@ -290,8 +295,8 @@ else
     touch "$SHELL_CONFIG"
 fi
 
-MARKER_START="# ==== CLAUDE CODE PROXY - GLM-5.1 ROUTING ===="
-MARKER_END="# ==== END CLAUDE CODE PROXY ===="
+MARKER_START="# ==== CLAUDE CODE - 3-MODE ROUTING ===="
+MARKER_END="# ==== END CLAUDE CODE 3-MODE ROUTING ===="
 
 if grep -q "$MARKER_START" "$SHELL_CONFIG" 2>/dev/null; then
     warn "Shell integration already present in $SHELL_CONFIG"
@@ -443,9 +448,32 @@ echo -e "${BOLD}========================================${RESET}"
 echo ""
 echo "Next steps:"
 echo "  1. Run: source $SHELL_CONFIG"
+echo "  2. Choose your mode:"
+echo "     glm-on   → Hybrid: Sonnet/Haiku → Z.AI, Opus → Anthropic (default)"
+echo "     glm-full → Full GLM: tout → Z.AI direct"
+echo "     glm-off  → Full Claude: tout → Anthropic OAuth"
+echo "  3. Run: claude"
+echo ""
+echo "Commands:"
+echo "  glm-status  → Show current mode"
+echo "  glm-tokens  → Token usage stats (hybrid mode only)"
+echo "  glm-key     → Check Z.AI API key"
+echo "  glm-logs    → Proxy logs (hybrid mode only)"
+echo ""
+echo "Requirements:"
+echo "  - Claude Max subscription (for Opus 4.6 as main agent)"
+echo "  - Be logged in: claude login"
+echo ""
+echo "Next steps:"
+echo "  1. Run: source $SHELL_CONFIG"
 echo "  2. Run: claude"
-echo "     (The proxy starts automatically)"
-echo "  3. Check logs: tail -f /tmp/claude-proxy.log"
+echo "     (The proxy starts automatically in hybrid mode)"
+echo ""
+echo "Routing modes:"
+echo "  glm-on     Hybrid: Sonnet/Haiku → Z.AI, Opus → Anthropic (default)"
+echo "  glm-full   Full GLM: tout → Z.AI direct (no proxy)"
+echo "  glm-off    Full Claude: tout → Anthropic OAuth"
+echo "  glm-status Show current mode"
 echo ""
 echo "Requirements:"
 echo "  - Claude Max subscription (for Opus 4.6 as main agent)"

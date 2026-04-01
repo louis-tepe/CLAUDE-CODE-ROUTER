@@ -40,17 +40,17 @@ fi
 cost=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 cost_fmt=$(printf "$%.4f" "$cost" 2>/dev/null || echo "\$0.00")
 
-# Routing state (read from proxy toggle file)
+# Routing state (3-mode: off=CLAUDE, on=HYBRID, full=GLM)
 routing_file="$HOME/.claude/glm-routing"
 if [ -f "$routing_file" ]; then
-    routing_state=$(cat "$routing_file" 2>/dev/null)
-    if [ "$routing_state" = "off" ]; then
-        routing_label="DIRECT"
-    else
-        routing_label="GLM-5.1"
-    fi
+    routing_state=$(cat "$routing_file" 2>/dev/null | tr -d '[:space:]')
+    case "$routing_state" in
+        off)   routing_label="CLAUDE" ;;
+        full)  routing_label="GLM" ;;
+        on|*)  routing_label="HYBRID" ;;
+    esac
 else
-    routing_label="GLM-5.1"
+    routing_label="HYBRID"
 fi
 
 # Build output

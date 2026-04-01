@@ -1,46 +1,67 @@
-# Claude Code Setup — GLM-5.1 Proxy
+# Claude Code Setup — 3-Mode Routing
 
-> Utilise Claude Code comme un pro : **Opus 4.6** comme cerveau principal + **GLM-5.1** comme workers pour les sous-tâches. Résultat : un agent IA puissant sans exploser les limites hebdomadaires de ton abonnement Claude.
+> Utilise Claude Code comme un pro avec **3 modes de routage** : Full Claude, Full GLM, ou Hybride. L'agent principal (Opus) peut rester sur Anthropic pendant que les sous-tâches passent par GLM-5.1 de Zhipu AI, ou tout basculer vers GLM.
 
-## Comment ça marche ?
+## Les 3 Modes
 
-Claude Code utilise 3 niveaux de modèles :
-- **Opus** — l'agent principal, celui qui réfléchit et orchestre (le plus intelligent)
-- **Sonnet** — les sous-agents qui exécutent les tâches (recherche, exploration, etc.)
-- **Haiku** — les micro-tâches rapides (résumés, validations)
+| Commande | Mode | Description |
+|----------|------|-------------|
+| `glm-off` | **Full Claude** | Tout → Anthropic OAuth (natif, 0 overhead) |
+| `glm-on` | **Hybride** | Sonnet/Haiku → Z.AI GLM (proxy), Opus → Anthropic |
+| `glm-full` | **Full GLM** | Tout → Z.AI direct (config officielle, pas de proxy) |
+| `glm-status` | — | Affiche le mode actif |
 
-Le problème : tout passe par Anthropic, et tu peux vite atteindre les limites hebdomadaires.
+### Mode Full Claude (`glm-off`)
+- Connexion OAuth Anthropic native
+- Toutes les fonctionnalités Claude : web search, vision, prompt caching
+- Aucun overhead, aucune variable d'environnement
+- Utilise ton abonnement Claude Max
 
-**La solution** : un proxy local qui redirige Sonnet et Haiku vers GLM-5.1 (modèle chinois de Zhipu AI, gratuit via Z.AI), tout en gardant Opus sur ton abonnement Claude Max.
+### Mode Hybride (`glm-on`) — Par défaut
+- Un proxy local route les requêtes par tier :
+  - **Opus** → Anthropic OAuth (ton abonnement Max)
+  - **Sonnet** → Z.AI GLM-5.1
+  - **Haiku** → Z.AI GLM-5.1
+- Sanitization automatique (les features incompatibles GLM sont renvoyées vers Anthropic)
+- Circuit breaker : après 5 échecs Z.AI, bascule sur Anthropic
+- Prompt caching désactivé (Z.AI ne le supporte pas)
+
+### Mode Full GLM (`glm-full`)
+- Config officielle Z.AI : `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`
+- Connexion directe, pas de proxy, pas de sanitization
+- Utilise le quota de ton abonnement GLM Coding Plan
+- MCP Z.AI disponibles : Vision, Web Search, Web Reader, Zread
+- Pas de prompt caching, pas de web_search natif Claude
 
 ```
-Claude Code
-    |
-localhost:8082
-    |
-[Proxy local]
-    |
-    |--- Opus ---------> Anthropic (ton abonnement Max)
-    |--- Sonnet -------> Z.AI GLM-5.1 (gratuit)
-    |--- Haiku --------> Z.AI GLM-5.1 (gratuit)
+                    ┌──────────────────────────────────────┐
+  glm-off           │  FULL CLAUDE                         │
+  ─────────         │  ANTHROPIC_BASE_URL = (unset)         │
+                    │  → OAuth Anthropic direct             │
+                    ├──────────────────────────────────────┤
+  glm-on            │  HYBRIDE                              │
+  ─────────         │  ANTHROPIC_BASE_URL = localhost:8082  │
+  (default)         │  Opus → Anthropic │ Sonnet/Haiku → GLM│
+                    ├──────────────────────────────────────┤
+  glm-full          │  FULL GLM                             │
+  ─────────         │  ANTHROPIC_BASE_URL = api.z.ai        │
+                    │  → Z.AI direct, config officielle     │
+                    └──────────────────────────────────────┘
 ```
-
-Les features incompatibles avec GLM-5.1 (recherche web, vision, etc.) sont automatiquement renvoyées vers Anthropic.
 
 ---
 
 ## Pré-requis
 
-Avant de commencer, assure-toi d'avoir :
-
 | Pré-requis | Comment vérifier | Comment installer |
 |------------|-----------------|-------------------|
 | **macOS** | Tu es sur Mac | - |
-| **Python 3.9+** | `python3 --version` | `brew install python3` |
+| **Python 3.10+** | `python3 --version` | `brew install python3` |
 | **jq** | `jq --version` | `brew install jq` |
-| **Homebrew** | `brew --version` | [brew.sh](https://brew.sh) |
+| **Node.js 18+** | `node --version` | `brew install node` |
 | **Claude Code** | `claude --version` | `npm install -g @anthropic-ai/claude-code` |
 | **Abonnement Claude Max** | [claude.ai/settings](https://claude.ai/settings) | [claude.ai/upgrade](https://claude.ai/upgrade) |
+| **GLM Coding Plan** (optionnel) | [z.ai/subscribe](https://z.ai/subscribe) | À partir de 10$/mois |
 
 ---
 
@@ -60,11 +81,12 @@ cd ~/claude-code-setup
 ```
 
 Le script va :
-1. Vérifier que tu as Python, jq, etc.
-2. Installer le proxy dans `~/claude-code-proxy/` (avec son environnement Python isolé)
-3. Copier la config Claude Code (settings, agents, statusline)
-4. Ajouter l'intégration shell dans ton `~/.zshrc`
-5. Tester que le proxy fonctionne
+1. Vérifier les pré-requis (Python, jq, etc.)
+2. Installer le proxy dans `~/claude-code-proxy/`
+3. Sauvegarder la clé API Z.AI dans `~/.claude/.zai-api-key`
+4. Copier la config Claude Code (settings, agents, statusline)
+5. Ajouter l'intégration shell dans `~/.zshrc`
+6. Tester le proxy
 
 ### Étape 3 — Recharge ton terminal
 
@@ -78,166 +100,108 @@ source ~/.zshrc
 claude login
 ```
 
-Connecte-toi avec ton compte Claude Max.
-
 ### Étape 5 — Lance Claude Code
 
 ```bash
 claude
 ```
 
-C'est tout. Le proxy démarre automatiquement en arrière-plan.
+Par défaut, le mode **Hybride** est actif. Change de mode avec `glm-off`, `glm-on`, ou `glm-full`.
 
 ---
 
-## Installer les plugins (optionnel mais recommandé)
+## Commandes
 
-Ces plugins ajoutent des fonctionnalités utiles à Claude Code :
+| Commande | Description |
+|----------|-------------|
+| `claude` | Lance Claude Code (configuré selon le mode actif) |
+| `cc` | Alias pour `claude --dangerously-skip-permissions` |
+| `glm-on` | Mode Hybride (Sonnet/Haiku → GLM proxy, Opus → Anthropic) |
+| `glm-full` | Mode Full GLM (tout → Z.AI direct) |
+| `glm-off` | Mode Full Claude (tout → Anthropic) |
+| `glm-status` | Affiche le mode et l'état du proxy |
+| `glm-tokens` | Stats de tokens (mode hybride uniquement) |
+| `glm-key` | Vérifie la clé API Z.AI |
+| `glm-logs` | Logs du proxy en temps réel |
+
+---
+
+## MCP Z.AI (optionnel, pour le mode Full GLM)
+
+Les serveurs MCP exclusifs du GLM Coding Plan peuvent être ajoutés :
 
 ```bash
-claude plugins:install feature-dev@claude-plugins-official
-claude plugins:install code-review@claude-plugins-official
-claude plugins:install commit-commands@claude-plugins-official
-claude plugins:install security-guidance@claude-plugins-official
-claude plugins:install hookify@claude-plugins-official
-claude plugins:install frontend-design@claude-plugins-official
+# Vision MCP (analyse d'images/vidéos)
+claude mcp add -s user zai-mcp-server \
+  --env Z_AI_API_KEY=$(cat ~/.claude/.zai-api-key) Z_AI_MODE=ZAI \
+  -- npx -y "@z_ai/mcp-server"
+
+# Web Search
+claude mcp add -s user -t http web-search-prime \
+  https://api.z.ai/api/mcp/web_search_prime/mcp \
+  --header "Authorization: Bearer $(cat ~/.claude/.zai-api-key)"
+
+# Web Reader
+claude mcp add -s user -t http web-reader \
+  https://api.z.ai/api/mcp/web_reader/mcp \
+  --header "Authorization: Bearer $(cat ~/.claude/.zai-api-key)"
+
+# Zread (docs GitHub)
+claude mcp add -s user -t http zread \
+  https://api.z.ai/api/mcp/zread/mcp \
+  --header "Authorization: Bearer $(cat ~/.claude/.zai-api-key)"
 ```
 
 ---
 
-## Vérifier que tout fonctionne
-
-### Le proxy tourne ?
-
-```bash
-curl http://localhost:8082/health
-```
-
-Tu devrais voir :
-```json
-{
-  "status": "healthy",
-  "target_model": "glm-5.1",
-  "routing": {
-    "opus": "Anthropic (OAuth)",
-    "sonnet": "Z.AI",
-    "haiku": "Z.AI"
-  }
-}
-```
-
-### Voir les logs en temps réel
-
-```bash
-tail -f /tmp/claude-proxy.log
-```
-
-Tu verras les requêtes routées avec des couleurs :
-- Cyan : routage (quel modèle va où)
-- Vert : requête réussie
-- Jaune : fallback vers Anthropic
-- Rouge : erreur
-
----
-
-## Ce qui est installé
+## Fichiers installés
 
 ```
-~/claude-code-proxy/          # Le proxy
+~/claude-code-proxy/          # Le proxy (mode hybride)
 ├── proxy.py                  # Serveur FastAPI
-├── .env                      # Clé API Z.AI
+├── .env                      # Clé API Z.AI + config proxy
 ├── start-proxy.sh            # Démarrage manuel
 └── venv/                     # Python isolé
 
 ~/.claude/                    # Config Claude Code
+├── .zai-api-key              # Clé API Z.AI (pour mode Full GLM)
+├── glm-routing               # État du mode (on/off/full)
 ├── settings.json             # Réglages globaux
-├── statusline-command.sh     # Barre de statut custom
+├── statusline-command.sh     # Barre de statut (affiche le mode)
 └── agents/                   # 7 agents spécialisés
-    ├── Bash.md               # Exécution de commandes
-    ├── Explore.md            # Exploration de code
-    ├── Plan.md               # Architecture (utilise Opus)
-    ├── claude-code-guide.md  # Guide Claude Code
-    ├── general-purpose.md    # Agent polyvalent
-    ├── magic-docs.md         # Documentation
-    └── statusline-setup.md   # Config statusline
 
-~/.zshrc                      # Intégration shell ajoutée
+~/.zshrc                      # Intégration shell (3 modes)
 ```
-
----
-
-## Commandes utiles
-
-| Commande | Description |
-|----------|-------------|
-| `claude` | Lancer Claude Code (proxy auto-start) |
-| `cc` | Alias pour le mode sans confirmations |
-| `curl localhost:8082/health` | Vérifier le proxy (routing, stats, circuit breaker) |
-| `tail -f /tmp/claude-proxy.log` | Logs du proxy |
-| `~/claude-code-proxy/start-proxy.sh` | Démarrer le proxy manuellement |
-| `cd ~/claude-code-setup && ./update.sh` | Mettre à jour (pull + re-appliquer) |
-| `cd ~/claude-code-setup && ./uninstall.sh` | Tout désinstaller proprement |
 
 ---
 
 ## Dépannage
 
-### Le proxy ne démarre pas
+### Le proxy ne démarre pas (mode hybride)
 
 ```bash
-# Vérifier si le port est utilisé
-lsof -i:8082
-
-# Regarder les logs d'erreur
-cat /tmp/claude-proxy.log
-
-# Relancer manuellement
-~/claude-code-proxy/start-proxy.sh
+lsof -i:8082                  # Port utilisé ?
+cat /tmp/claude-proxy.log     # Logs d'erreur
+~/claude-code-proxy/start-proxy.sh  # Démarrage manuel
 ```
 
-### Claude Code ne se connecte pas
+### Mode Full GLM ne fonctionne pas
 
 ```bash
-# Vérifier la variable d'environnement
-echo $ANTHROPIC_BASE_URL
-# Doit afficher : http://localhost:8082
-
-# Se reconnecter
-claude login
+glm-key                       # Vérifier la clé API
+cat ~/.claude/.zai-api-key    # Vérifier le contenu
 ```
 
-### Erreurs GLM-5.1
-
-Le proxy inclut un **circuit breaker** : apres 5 echecs Z.AI consecutifs, il bascule automatiquement sur Anthropic pendant 2 minutes, puis re-teste. Visible dans `/health`.
-
----
-
-## Mise a jour
-
-Quand de nouvelles ameliorations sont publiees :
+### Revenir au mode par défaut
 
 ```bash
-cd ~/claude-code-setup
-./update.sh
+glm-on                        # Repasse en mode hybride
 ```
-
-Le script pull les derniers changements, met a jour le proxy et la config, et preserv ton `.env`.
-
----
-
-## Desinstallation
-
-```bash
-cd ~/claude-code-setup
-./uninstall.sh
-```
-
-Le script supprime proprement : proxy, agents, integration shell, service auto-start, et propose de restaurer ton ancien settings.json.
 
 ---
 
 ## Crédits
 
 - Proxy basé sur [jodavan/claude-code-proxy](https://github.com/jodavan/claude-code-proxy), adapté pour le routage GLM-5.1
-- Modèle GLM-5.1 par [Zhipu AI](https://z.ai)
+- Modèles GLM par [Zhipu AI](https://z.ai)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) par Anthropic
