@@ -148,25 +148,35 @@ BASE_RETRY_DELAY = float(os.getenv("BASE_RETRY_DELAY", "1.0"))
 MAX_RETRY_DELAY = float(os.getenv("MAX_RETRY_DELAY", "60.0"))
 
 # ---------------------------------------------------------------------------
-# Pricing — used to scale tokens so Claude Code displays correct GLM-5.1 cost
+# Pricing — used to scale tokens so Claude Code displays correct GLM cost
 # ---------------------------------------------------------------------------
 # Anthropic pricing (USD per million tokens) — what Claude Code uses internally
 ANTHROPIC_PRICING = {
     "sonnet": {"input": 3.00, "output": 15.00},
     "haiku":  {"input": 1.00, "output": 5.00},
 }
-# GLM-5.1 pricing (USD per million tokens)
-GLM5_INPUT_PRICE = float(os.getenv("GLM5_INPUT_PRICE", "1.00"))
-GLM5_OUTPUT_PRICE = float(os.getenv("GLM5_OUTPUT_PRICE", "3.20"))
-# NOTE: Update these defaults if GLM-5.1 pricing differs from GLM-5
+# Per-tier GLM pricing (USD per million tokens)
+# Sonnet tier → GLM-5.1, Haiku tier → GLM-4.7 (configurable via env)
+_glm5_in = float(os.getenv("GLM5_INPUT_PRICE", "1.00"))
+_glm5_out = float(os.getenv("GLM5_OUTPUT_PRICE", "3.20"))
+GLM_PRICING = {
+    "sonnet": {
+        "input": float(os.getenv("GLM_SONNET_INPUT_PRICE", str(_glm5_in))),
+        "output": float(os.getenv("GLM_SONNET_OUTPUT_PRICE", str(_glm5_out))),
+    },
+    "haiku": {
+        "input": float(os.getenv("GLM_HAIKU_INPUT_PRICE", "0.50")),
+        "output": float(os.getenv("GLM_HAIKU_OUTPUT_PRICE", "2.00")),
+    },
+}
 
 
 def _scale_tokens(real_tokens: int, tier: str, direction: str) -> int:
-    """Scale token count so Anthropic pricing × scaled = GLM-5.1 pricing × real."""
-    if tier not in ANTHROPIC_PRICING or real_tokens == 0:
+    """Scale token count so Anthropic pricing × scaled = GLM pricing × real."""
+    if tier not in ANTHROPIC_PRICING or tier not in GLM_PRICING or real_tokens == 0:
         return real_tokens
     anthropic_price = ANTHROPIC_PRICING[tier][direction]
-    glm_price = GLM5_INPUT_PRICE if direction == "input" else GLM5_OUTPUT_PRICE
+    glm_price = GLM_PRICING[tier][direction]
     return max(1, round(real_tokens * glm_price / anthropic_price))
 
 
@@ -1209,8 +1219,9 @@ async def token_stats():
         if not inp and not out:
             continue
         # Calculate real cost based on actual provider pricing
-        if tier in ("sonnet", "haiku"):
-            cost = (inp * GLM5_INPUT_PRICE + out * GLM5_OUTPUT_PRICE) / 1_000_000
+        if tier in GLM_PRICING:
+            gp = GLM_PRICING[tier]
+            cost = (inp * gp["input"] + out * gp["output"]) / 1_000_000
         else:
             ap = ANTHROPIC_PRICING.get(tier)
             if ap:
@@ -1227,7 +1238,7 @@ async def token_stats():
     return {
         "total": s["total_tokens"],
         "total_cost": f"${total_cost:.4f}",
-        "glm5_pricing": f"${GLM5_INPUT_PRICE}/MTok in, ${GLM5_OUTPUT_PRICE}/MTok out",
+        "pricing": {t: f"${p['input']}/MTok in, ${p['output']}/MTok out" for t, p in GLM_PRICING.items()},
         "per_tier": tiers,
         "uptime": s["uptime"],
     }
