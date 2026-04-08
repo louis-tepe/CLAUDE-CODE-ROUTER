@@ -1,207 +1,233 @@
-# Claude Code Setup — 3-Mode Routing
+# Claude Code Setup — Multi-Provider Router
 
-> Utilise Claude Code comme un pro avec **3 modes de routage** : Full Claude, Full GLM, ou Hybride. L'agent principal (Opus) peut rester sur Anthropic pendant que les sous-tâches passent par GLM-5.1 de Zhipu AI, ou tout basculer vers GLM.
+> Use Claude Code with **multiple LLM providers** (Z.AI GLM, MiniMax, or any Anthropic-compatible API) via a local proxy. The main agent (Opus) stays on Anthropic while sub-tasks route through cheaper/faster providers.
 
-## Les 3 Modes
+## 5 Routing Modes
 
-| Commande | Mode | Description |
-|----------|------|-------------|
-| `glm-off` | **Full Claude** | Tout → Anthropic OAuth (natif, 0 overhead) |
-| `glm-on` | **Hybride** | Sonnet/Haiku → Z.AI GLM (proxy), Opus → Anthropic |
-| `glm-full` | **Full GLM** | Tout → Z.AI direct (config officielle, pas de proxy) |
-| `glm-status` | — | Affiche le mode actif |
+| Command | Mode | Description |
+|---------|------|-------------|
+| `claude-full` | **Full Claude** | All → Anthropic OAuth (native, zero overhead) |
+| `glm-on` | **Hybrid GLM** | Sonnet → GLM-5.1, Haiku → GLM-4.7, Opus → Anthropic |
+| `minimax-on` | **Hybrid MiniMax** | Sonnet/Haiku → MiniMax M2.7, Opus → Anthropic |
+| `mix-on` | **Split** | Sonnet → GLM-5.1, Haiku → MiniMax M2.7, Opus → Anthropic |
+| `glm-full` | **Full GLM** | All → Z.AI direct (official config, no proxy) |
 
-### Mode Full Claude (`glm-off`)
-- Connexion OAuth Anthropic native
-- Toutes les fonctionnalités Claude : web search, vision, prompt caching
-- Aucun overhead, aucune variable d'environnement
-- Utilise ton abonnement Claude Max
-
-### Mode Hybride (`glm-on`) — Par défaut
-- Un proxy local route les requêtes par tier :
-  - **Opus** → Anthropic OAuth (ton abonnement Max)
-  - **Sonnet** → Z.AI GLM-5.1
-  - **Haiku** → Z.AI GLM-5.1
-- Sanitization automatique (les features incompatibles GLM sont renvoyées vers Anthropic)
-- Circuit breaker : après 5 échecs Z.AI, bascule sur Anthropic
-- Prompt caching désactivé (Z.AI ne le supporte pas)
-
-### Mode Full GLM (`glm-full`)
-- Config officielle Z.AI : `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`
-- Connexion directe, pas de proxy, pas de sanitization
-- Utilise le quota de ton abonnement GLM Coding Plan
-- MCP Z.AI disponibles : Vision, Web Search, Web Reader, Zread
-- Pas de prompt caching, pas de web_search natif Claude
+### How it works
 
 ```
-                    ┌──────────────────────────────────────┐
-  glm-off           │  FULL CLAUDE                         │
-  ─────────         │  ANTHROPIC_BASE_URL = (unset)         │
-                    │  → OAuth Anthropic direct             │
-                    ├──────────────────────────────────────┤
-  glm-on            │  HYBRIDE                              │
-  ─────────         │  ANTHROPIC_BASE_URL = localhost:8082  │
-  (default)         │  Opus → Anthropic │ Sonnet/Haiku → GLM│
-                    ├──────────────────────────────────────┤
-  glm-full          │  FULL GLM                             │
-  ─────────         │  ANTHROPIC_BASE_URL = api.z.ai        │
-                    │  → Z.AI direct, config officielle     │
-                    └──────────────────────────────────────┘
+                    ┌──────────────────────────────────────────────┐
+  claude-full       │  FULL CLAUDE                                  │
+                    │  All requests → Anthropic OAuth (native)      │
+                    ├──────────────────────────────────────────────┤
+  glm-on            │  HYBRID GLM                                   │
+                    │  Opus → Anthropic | Sonnet → GLM-5.1          │
+                    │                   | Haiku  → GLM-4.7          │
+                    ├──────────────────────────────────────────────┤
+  minimax-on        │  HYBRID MINIMAX                               │
+                    │  Opus → Anthropic | Sonnet/Haiku → MiniMax    │
+                    ├──────────────────────────────────────────────┤
+  mix-on            │  SPLIT (best of both)                         │
+                    │  Opus → Anthropic | Sonnet → GLM-5.1          │
+                    │                   | Haiku  → MiniMax M2.7     │
+                    ├──────────────────────────────────────────────┤
+  glm-full          │  FULL GLM                                     │
+                    │  All requests → Z.AI direct (no proxy)        │
+                    └──────────────────────────────────────────────┘
 ```
+
+### Proxy features
+- **Circuit breaker**: auto-bypass provider after 5 failures (120s recovery)
+- **Automatic fallback**: web_search, vision, PDF → Anthropic transparently
+- **Model-based pricing**: accurate cost display from built-in `MODEL_PRICING` table
+- **Request sanitization**: strips Anthropic-specific params for provider compatibility
+- **Per-tier caching**: respects each provider's cache_control support
 
 ---
 
-## Pré-requis
+## Prerequisites
 
-| Pré-requis | Comment vérifier | Comment installer |
-|------------|-----------------|-------------------|
-| **macOS** | Tu es sur Mac | - |
+| Requirement | Check | Install |
+|-------------|-------|---------|
+| **macOS or Linux** | `uname -s` | — |
 | **Python 3.10+** | `python3 --version` | `brew install python3` |
 | **jq** | `jq --version` | `brew install jq` |
 | **Node.js 18+** | `node --version` | `brew install node` |
 | **Claude Code** | `claude --version` | `npm install -g @anthropic-ai/claude-code` |
-| **Abonnement Claude Max** | [claude.ai/settings](https://claude.ai/settings) | [claude.ai/upgrade](https://claude.ai/upgrade) |
-| **GLM Coding Plan** (optionnel) | [z.ai/subscribe](https://z.ai/subscribe) | À partir de 10$/mois |
+| **Claude Max subscription** | [claude.ai/settings](https://claude.ai/settings) | Required for Opus via OAuth |
+| **GLM Coding Plan** (optional) | [z.ai/subscribe](https://z.ai/subscribe) | From $10/month |
+| **MiniMax API key** (optional) | [platform.minimax.io](https://platform.minimax.io) | Pay-as-you-go |
 
 ---
 
-## Installation (5 minutes)
+## Installation
 
-### Étape 1 — Clone le repo
+### Step 1 — Clone
 
 ```bash
 git clone git@github.com:louis-tepe/claude-code-setup.git ~/claude-code-setup
+cd ~/claude-code-setup
 ```
 
-### Étape 2 — Lance l'installateur
+### Step 2 — Install
 
 ```bash
-cd ~/claude-code-setup
 ./install.sh
 ```
 
-Le script va :
-1. Vérifier les pré-requis (Python, jq, etc.)
-2. Installer le proxy dans `~/claude-code-proxy/`
-3. Sauvegarder la clé API Z.AI dans `~/.claude/.zai-api-key`
-4. Copier la config Claude Code (settings, agents, statusline)
-5. Ajouter l'intégration shell dans `~/.zshrc`
-6. Tester le proxy
+The script will:
+1. Check prerequisites (Python, jq, Node.js)
+2. Install the proxy + Python dependencies
+3. Copy Claude Code config (settings, agents, statusline)
+4. Copy mode files to `~/.claude/proxy-modes/`
+5. Add shell integration to `~/.zshrc` (or `.bashrc`)
+6. Prompt for API keys
+7. Test the proxy
 
-### Étape 3 — Recharge ton terminal
+### Step 3 — Reload terminal
 
 ```bash
 source ~/.zshrc
 ```
 
-### Étape 4 — Connecte-toi à Claude
+### Step 4 — Configure API keys
 
 ```bash
-claude login
+# Z.AI (for GLM modes)
+echo 'your_zai_key' > ~/.claude/.zai-api-key
+
+# MiniMax (for MiniMax/mix modes)
+echo 'your_minimax_key' > ~/.claude/.minimax-api-key
 ```
 
-### Étape 5 — Lance Claude Code
+### Step 5 — Choose a mode and launch
 
 ```bash
+minimax-on    # or glm-on, mix-on, claude-full
 claude
 ```
 
-Par défaut, le mode **Hybride** est actif. Change de mode avec `glm-off`, `glm-on`, ou `glm-full`.
+---
+
+## Commands
+
+### Mode switching
+| Command | Description |
+|---------|-------------|
+| `glm-on` | Hybrid GLM (Sonnet → GLM-5.1, Haiku → GLM-4.7) |
+| `minimax-on` | Hybrid MiniMax (Sonnet/Haiku → MiniMax M2.7) |
+| `mix-on` | Split (Sonnet → GLM-5.1, Haiku → MiniMax M2.7) |
+| `glm-full` | Full GLM (all → Z.AI direct) |
+| `claude-full` | Full Claude (all → Anthropic) |
+
+### Utilities
+| Command | Description |
+|---------|-------------|
+| `proxy-status` | Show current mode, routing, health |
+| `proxy-tokens` | Token usage and cost stats |
+| `proxy-keys` | Check configured API keys |
+| `proxy-logs` | Proxy logs in real time |
+| `proxy-setup` | Setup instructions |
 
 ---
 
-## Commandes
+## Architecture
 
-| Commande | Description |
-|----------|-------------|
-| `claude` | Lance Claude Code (configuré selon le mode actif) |
-| `cc` | Alias pour `claude --dangerously-skip-permissions` |
-| `glm-on` | Mode Hybride (Sonnet/Haiku → GLM proxy, Opus → Anthropic) |
-| `glm-full` | Mode Full GLM (tout → Z.AI direct) |
-| `glm-off` | Mode Full Claude (tout → Anthropic) |
-| `glm-status` | Affiche le mode et l'état du proxy |
-| `glm-tokens` | Stats de tokens (mode hybride uniquement) |
-| `glm-key` | Vérifie la clé API Z.AI |
-| `glm-logs` | Logs du proxy en temps réel |
+```
+~/.claude/                          # User config (never in git)
+├── proxy-routing                   # Current mode state (on/minimax/mix/full/off)
+├── proxy-modes/                    # Provider config per mode
+│   ├── on.env                      # GLM hybrid config
+│   ├── minimax.env                 # MiniMax hybrid config
+│   └── mix.env                     # Split GLM+MiniMax config
+├── .zai-api-key                    # Z.AI API key
+├── .minimax-api-key                # MiniMax API key
+├── claude-shell.sh                 # Shell wrapper (sourced by .zshrc)
+└── statusline-command.sh           # Status bar display
+
+claude-code-setup/                  # Source code (git repo)
+├── proxy/
+│   ├── proxy.py                    # FastAPI proxy (Multi-Provider Router v5)
+│   ├── .env                        # Operational config (port, log level)
+│   └── requirements.txt            # Python deps
+├── proxy-modes/                    # Mode file templates
+├── shell/claude-shell.sh           # Shell source
+├── claude-config/                  # Claude Code config templates
+└── install.sh                      # Installer
+```
+
+### Adding a new provider
+
+1. Create API key file: `echo 'key' > ~/.claude/.newprovider-api-key`
+2. Create mode file `~/.claude/proxy-modes/newprovider.env`:
+   ```env
+   _SHELL_SONNET_KEY=.newprovider-api-key
+   _SHELL_HAIKU_KEY=.newprovider-api-key
+   SONNET_PROVIDER_BASE_URL=https://api.newprovider.com/anthropic
+   HAIKU_PROVIDER_BASE_URL=https://api.newprovider.com/anthropic
+   PROVIDER_SONNET_MODEL=newprovider-model
+   PROVIDER_HAIKU_MODEL=newprovider-model
+   ```
+3. Add pricing to `proxy.py` `MODEL_PRICING` table
+4. Add shell command: `newprovider-on() { _switch_mode newprovider; }`
+5. Add display case in `proxy-status()`
+
+### Mode env file format
+
+```env
+# Shell directives (not passed to proxy)
+_SHELL_SONNET_KEY=.keyfile          # Key file relative to ~/.claude/
+_SHELL_HAIKU_KEY=.keyfile           # Key file relative to ~/.claude/
+_SHELL_DISABLE_CACHING_SONNET=1    # Disable prompt caching for Sonnet
+_SHELL_DISABLE_CACHING_HAIKU=1     # Disable prompt caching for Haiku
+
+# Proxy env vars (passed to proxy process)
+SONNET_PROVIDER_BASE_URL=https://...
+HAIKU_PROVIDER_BASE_URL=https://...
+PROVIDER_SONNET_MODEL=model-name
+PROVIDER_HAIKU_MODEL=model-name
+PROVIDER_PASS_CACHE_CONTROL=1       # Pass cache_control to provider
+```
 
 ---
 
-## MCP Z.AI (optionnel, pour le mode Full GLM)
+## Pricing
 
-Les serveurs MCP exclusifs du GLM Coding Plan peuvent être ajoutés :
+Pricing is resolved automatically by model name in `proxy.py`:
 
+| Model | Input/M | Output/M | Provider |
+|-------|---------|----------|----------|
+| GLM-5.1 | $1.40 | $4.40 | Z.AI |
+| GLM-4.7 | $0.60 | $2.20 | Z.AI |
+| MiniMax M2.7 | $0.30 | $1.20 | MiniMax |
+| Claude Sonnet 4.6 | $3.00 | $15.00 | Anthropic |
+| Claude Haiku 4.5 | $1.00 | $5.00 | Anthropic |
+
+---
+
+## Troubleshooting
+
+### Proxy won't start
 ```bash
-# Vision MCP (analyse d'images/vidéos)
-claude mcp add -s user zai-mcp-server \
-  --env Z_AI_API_KEY=$(cat ~/.claude/.zai-api-key) Z_AI_MODE=ZAI \
-  -- npx -y "@z_ai/mcp-server"
+proxy-status                    # Check current state
+proxy-logs                      # Check error logs
+lsof -i:8082                   # Port already in use?
+```
 
-# Web Search
-claude mcp add -s user -t http web-search-prime \
-  https://api.z.ai/api/mcp/web_search_prime/mcp \
-  --header "Authorization: Bearer $(cat ~/.claude/.zai-api-key)"
+### API key issues
+```bash
+proxy-keys                      # Check all configured keys
+```
 
-# Web Reader
-claude mcp add -s user -t http web-reader \
-  https://api.z.ai/api/mcp/web_reader/mcp \
-  --header "Authorization: Bearer $(cat ~/.claude/.zai-api-key)"
-
-# Zread (docs GitHub)
-claude mcp add -s user -t http zread \
-  https://api.z.ai/api/mcp/zread/mcp \
-  --header "Authorization: Bearer $(cat ~/.claude/.zai-api-key)"
+### Switch to safe mode
+```bash
+claude-full                     # Bypass proxy, use Anthropic directly
 ```
 
 ---
 
-## Fichiers installés
+## Credits
 
-```
-~/claude-code-proxy/          # Le proxy (mode hybride)
-├── proxy.py                  # Serveur FastAPI
-├── .env                      # Clé API Z.AI + config proxy
-├── start-proxy.sh            # Démarrage manuel
-└── venv/                     # Python isolé
-
-~/.claude/                    # Config Claude Code
-├── .zai-api-key              # Clé API Z.AI (pour mode Full GLM)
-├── glm-routing               # État du mode (on/off/full)
-├── settings.json             # Réglages globaux
-├── statusline-command.sh     # Barre de statut (affiche le mode)
-└── agents/                   # 7 agents spécialisés
-
-~/.zshrc                      # Intégration shell (3 modes)
-```
-
----
-
-## Dépannage
-
-### Le proxy ne démarre pas (mode hybride)
-
-```bash
-lsof -i:8082                  # Port utilisé ?
-cat /tmp/claude-proxy.log     # Logs d'erreur
-~/claude-code-proxy/start-proxy.sh  # Démarrage manuel
-```
-
-### Mode Full GLM ne fonctionne pas
-
-```bash
-glm-key                       # Vérifier la clé API
-cat ~/.claude/.zai-api-key    # Vérifier le contenu
-```
-
-### Revenir au mode par défaut
-
-```bash
-glm-on                        # Repasse en mode hybride
-```
-
----
-
-## Crédits
-
-- Proxy basé sur [jodavan/claude-code-proxy](https://github.com/jodavan/claude-code-proxy), adapté pour le routage GLM-5.1
-- Modèles GLM par [Zhipu AI](https://z.ai)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) par Anthropic
+- Proxy originally based on [jodavan/claude-code-proxy](https://github.com/jodavan/claude-code-proxy)
+- GLM models by [Zhipu AI / Z.AI](https://z.ai)
+- MiniMax models by [MiniMax](https://minimax.io)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) by Anthropic

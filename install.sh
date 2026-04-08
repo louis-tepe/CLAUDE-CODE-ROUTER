@@ -2,12 +2,13 @@
 set -e
 
 # ==============================================================================
-# Claude Code Setup — GLM-5.1 Proxy + Configuration
+# Claude Code Setup — Multi-Provider Router v5
 # ==============================================================================
 # This script installs:
-#   1. GLM-5.1 proxy (routes Haiku/Sonnet → Z.AI GLM-5.1, Opus → Anthropic)
-#   2. Claude Code global config (settings, agents, statusline, plugins)
-#   3. Shell integration (auto-start proxy, aliases)
+#   1. Multi-provider proxy (routes Sonnet/Haiku → GLM/MiniMax/etc., Opus → Anthropic)
+#   2. Mode config files (proxy-modes/*.env)
+#   3. Claude Code global config (settings, agents, statusline)
+#   4. Shell integration (mode switching, proxy lifecycle)
 #
 # Supports: macOS and Linux
 # ==============================================================================
@@ -51,7 +52,6 @@ case "$OS" in
     *)      error "Unsupported OS: $OS. Only macOS and Linux are supported." ;;
 esac
 
-# Cross-platform sed -i
 sed_inplace() {
     if [ "$PLATFORM" = "macos" ]; then
         sed -i.bak "$@"
@@ -60,30 +60,30 @@ sed_inplace() {
     fi
 }
 
-# Cross-platform notification sound
 play_notification() {
     if [ "$PLATFORM" = "macos" ]; then
         echo 'afplay /System/Library/Sounds/Glass.aiff &'
     else
-        # Linux: use paplay if available, otherwise no-op
         echo '(command -v paplay &>/dev/null && paplay /usr/share/sounds/freedesktop/stereo/complete.oga &) 2>/dev/null || true'
     fi
 }
 
 echo ""
-echo -e "${BOLD}========================================${RESET}"
-echo -e "${BOLD}  Claude Code + GLM-5.1 Proxy Installer${RESET}"
-echo -e "${BOLD}========================================${RESET}"
+echo -e "${BOLD}================================================${RESET}"
+echo -e "${BOLD}  Claude Code — Multi-Provider Router Installer${RESET}"
+echo -e "${BOLD}================================================${RESET}"
 echo ""
 echo "Platform: $PLATFORM"
 echo ""
 echo "This will install:"
-echo "  - GLM-5.1 proxy (Hybrid mode: Sonnet/Haiku → Z.AI, Opus → Anthropic)"
-echo "  - Claude Code config (agents, plugins, statusline)"
-echo "  - Shell integration with 3 routing modes:"
-echo "      glm-on   = Hybrid (Sonnet/Haiku → Z.AI proxy, Opus → Anthropic)"
-echo "      glm-full = Full GLM (tout → Z.AI direct)"
-echo "      glm-off  = Full Claude (tout → Anthropic OAuth)"
+echo "  - Multi-provider proxy (GLM, MiniMax, or any Anthropic-compatible API)"
+echo "  - Claude Code config (agents, statusline)"
+echo "  - Shell integration with 5 routing modes:"
+echo "      claude-full  = Full Claude (all → Anthropic OAuth)"
+echo "      glm-on       = Hybrid GLM (Sonnet → GLM-5.1, Haiku → GLM-4.7)"
+echo "      minimax-on   = Hybrid MiniMax (Sonnet/Haiku → MiniMax M2.7)"
+echo "      mix-on       = Split (Sonnet → GLM-5.1, Haiku → MiniMax M2.7)"
+echo "      glm-full     = Full GLM (all → Z.AI direct)"
 echo ""
 
 # ------------------------------------------------------------------------------
@@ -127,28 +127,17 @@ else
     fi
 fi
 
-# jq (needed for statusline)
+# jq
 if command -v jq &>/dev/null; then
     ok "jq found"
 else
     warn "jq not found — installing..."
     if [ "$PLATFORM" = "macos" ]; then
-        if command -v brew &>/dev/null; then
-            brew install jq
-            ok "jq installed"
-        else
-            error "jq is required. Install Homebrew (brew.sh) then: brew install jq"
-        fi
+        command -v brew &>/dev/null && brew install jq && ok "jq installed" || error "jq is required. Install Homebrew then: brew install jq"
     else
-        if command -v apt &>/dev/null; then
-            sudo apt install -y jq
-            ok "jq installed"
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install -y jq
-            ok "jq installed"
-        else
-            error "jq is required. Install it with your package manager."
-        fi
+        command -v apt &>/dev/null && sudo apt install -y jq && ok "jq installed" || \
+        command -v dnf &>/dev/null && sudo dnf install -y jq && ok "jq installed" || \
+        error "jq is required. Install it with your package manager."
     fi
 fi
 
@@ -158,7 +147,6 @@ if command -v claude &>/dev/null; then
 else
     warn "Claude Code not found in PATH"
     echo "  Install it with: npm install -g @anthropic-ai/claude-code"
-    echo "  The proxy and config will still be installed."
 fi
 
 echo ""
@@ -166,7 +154,7 @@ echo ""
 # ------------------------------------------------------------------------------
 # Install Proxy
 # ------------------------------------------------------------------------------
-info "Installing GLM-5.1 proxy..."
+info "Installing multi-provider proxy..."
 
 if [ -d "$PROXY_DIR" ]; then
     warn "Proxy directory already exists at $PROXY_DIR"
@@ -181,52 +169,78 @@ fi
 
 if [ ! -d "$PROXY_DIR" ]; then
     CLEANUP_PROXY=true
-    mkdir -p "$PROXY_DIR" || error "Failed to create $PROXY_DIR"
-    cp "$SCRIPT_DIR/proxy/proxy.py" "$PROXY_DIR/" || error "Failed to copy proxy.py"
-    cp "$SCRIPT_DIR/proxy/requirements.txt" "$PROXY_DIR/" || error "Failed to copy requirements.txt"
-    cp "$SCRIPT_DIR/proxy/start-proxy.sh" "$PROXY_DIR/" || error "Failed to copy start-proxy.sh"
+    mkdir -p "$PROXY_DIR"
+    cp "$SCRIPT_DIR/proxy/proxy.py" "$PROXY_DIR/"
+    cp "$SCRIPT_DIR/proxy/requirements.txt" "$PROXY_DIR/"
+    cp "$SCRIPT_DIR/proxy/start-proxy.sh" "$PROXY_DIR/"
     chmod +x "$PROXY_DIR/start-proxy.sh"
 
-    # .env — prompt for API key if not already set
-    if [ -f "$PROXY_DIR/.env" ]; then
-        ok "Existing .env preserved"
-    else
+    # .env — operational config only (port, log level)
+    if [ ! -f "$PROXY_DIR/.env" ]; then
         cp "$SCRIPT_DIR/proxy/.env.example" "$PROXY_DIR/.env"
-
-        if [ -n "$ZAI_API_KEY" ]; then
-            ZAI_KEY="$ZAI_API_KEY"
-            ok "Using Z.AI API key from environment"
-        else
-            echo ""
-            info "A Z.AI API key is required for GLM-5.1 routing."
-            echo "  Get one at: https://z.ai/subscribe"
-            echo ""
-            read -p "  Enter your Z.AI API key: " ZAI_KEY
-            echo
-        fi
-
-        if [ -n "$ZAI_KEY" ]; then
-            if [ "$PLATFORM" = "macos" ]; then
-                sed -i '' "s|your-zai-api-key-here|$ZAI_KEY|g" "$PROXY_DIR/.env"
-            else
-                sed -i "s|your-zai-api-key-here|$ZAI_KEY|g" "$PROXY_DIR/.env"
-            fi
-            ok "API key configured"
-
-            echo "$ZAI_KEY" > "$CLAUDE_DIR/.zai-api-key"
-            ok "API key saved to $CLAUDE_DIR/.zai-api-key (for Full GLM mode)"
-        else
-            warn "No API key provided. Edit ~/claude-code-proxy/.env before using the proxy."
-        fi
     fi
     ok "Proxy files copied to $PROXY_DIR"
 
     # Create venv and install dependencies
     info "Creating Python virtual environment..."
-    python3 -m venv "$PROXY_DIR/venv" || error "Failed to create venv. On Linux, you may need: sudo apt install python3-venv"
+    python3 -m venv "$PROXY_DIR/venv" || error "Failed to create venv. On Linux: sudo apt install python3-venv"
     "$PROXY_DIR/venv/bin/pip" install -q -r "$PROXY_DIR/requirements.txt" || error "Failed to install Python dependencies"
     ok "Python dependencies installed"
     CLEANUP_PROXY=false
+fi
+
+echo ""
+
+# ------------------------------------------------------------------------------
+# Install Mode Files
+# ------------------------------------------------------------------------------
+info "Installing provider mode files..."
+
+mkdir -p "$CLAUDE_DIR/proxy-modes"
+for mode_file in "$SCRIPT_DIR/proxy-modes/"*.env; do
+    [ -f "$mode_file" ] || continue
+    cp "$mode_file" "$CLAUDE_DIR/proxy-modes/"
+done
+MODE_COUNT=$(ls "$SCRIPT_DIR/proxy-modes/"*.env 2>/dev/null | wc -l | tr -d ' ')
+ok "$MODE_COUNT mode files installed to $CLAUDE_DIR/proxy-modes/"
+
+echo ""
+
+# ------------------------------------------------------------------------------
+# API Keys
+# ------------------------------------------------------------------------------
+info "Configuring API keys..."
+
+# Z.AI key
+if [ -f "$CLAUDE_DIR/.zai-api-key" ] && [ -s "$CLAUDE_DIR/.zai-api-key" ]; then
+    ok "Z.AI API key already configured"
+else
+    echo ""
+    echo "  Z.AI API key (for GLM modes). Get one at: https://z.ai/subscribe"
+    read -p "  Enter your Z.AI API key (or press Enter to skip): " ZAI_KEY
+    if [ -n "$ZAI_KEY" ]; then
+        echo "$ZAI_KEY" > "$CLAUDE_DIR/.zai-api-key"
+        chmod 600 "$CLAUDE_DIR/.zai-api-key"
+        ok "Z.AI API key saved"
+    else
+        warn "Skipped — GLM modes won't work without a Z.AI key"
+    fi
+fi
+
+# MiniMax key
+if [ -f "$CLAUDE_DIR/.minimax-api-key" ] && [ -s "$CLAUDE_DIR/.minimax-api-key" ]; then
+    ok "MiniMax API key already configured"
+else
+    echo ""
+    echo "  MiniMax API key (for MiniMax/mix modes). Get one at: https://platform.minimax.io"
+    read -p "  Enter your MiniMax API key (or press Enter to skip): " MINIMAX_KEY
+    if [ -n "$MINIMAX_KEY" ]; then
+        echo "$MINIMAX_KEY" > "$CLAUDE_DIR/.minimax-api-key"
+        chmod 600 "$CLAUDE_DIR/.minimax-api-key"
+        ok "MiniMax API key saved"
+    else
+        warn "Skipped — MiniMax/mix modes won't work without a MiniMax key"
+    fi
 fi
 
 echo ""
@@ -236,6 +250,8 @@ echo ""
 # ------------------------------------------------------------------------------
 info "Installing Claude Code configuration..."
 
+mkdir -p "$CLAUDE_DIR/agents"
+
 # Backup existing settings
 if [ -f "$CLAUDE_DIR/settings.json" ]; then
     BACKUP="$CLAUDE_DIR/settings.json.backup.$(date +%Y%m%d_%H%M%S)"
@@ -243,10 +259,7 @@ if [ -f "$CLAUDE_DIR/settings.json" ]; then
     ok "Existing settings backed up to $BACKUP"
 fi
 
-# Create directories
-mkdir -p "$CLAUDE_DIR/agents"
-
-# Copy settings — adapt notification sound for platform
+# Copy settings
 cp "$SCRIPT_DIR/claude-config/settings.json" "$CLAUDE_DIR/settings.json"
 if [ "$PLATFORM" = "linux" ]; then
     NOTIFICATION_CMD=$(play_notification)
@@ -271,6 +284,7 @@ ok "statusline-command.sh installed"
 
 # Copy agents
 for agent in "$SCRIPT_DIR/claude-config/agents/"*.md; do
+    [ -f "$agent" ] || continue
     cp "$agent" "$CLAUDE_DIR/agents/"
 done
 AGENT_COUNT=$(ls "$SCRIPT_DIR/claude-config/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
@@ -283,7 +297,6 @@ echo ""
 # ------------------------------------------------------------------------------
 info "Setting up shell integration..."
 
-# Detect shell config file
 if [ -n "$ZSH_VERSION" ] || [ -f "$HOME/.zshrc" ]; then
     SHELL_CONFIG="$HOME/.zshrc"
 elif [ -f "$HOME/.bashrc" ]; then
@@ -295,25 +308,30 @@ else
     touch "$SHELL_CONFIG"
 fi
 
-MARKER_START="# ==== CLAUDE CODE - 3-MODE ROUTING ===="
-MARKER_END="# ==== END CLAUDE CODE 3-MODE ROUTING ===="
+# Support both old and new markers for upgrade
+MARKER_OLD="# ==== CLAUDE CODE - 3-MODE ROUTING ===="
+MARKER_START="# ==== CLAUDE CODE - MULTI-PROVIDER ROUTING ===="
+MARKER_END="# ==== END CLAUDE CODE MULTI-PROVIDER ROUTING ===="
+MARKER_END_OLD="# ==== END CLAUDE CODE 3-MODE ROUTING ===="
 
+NEEDS_INSTALL=true
 if grep -q "$MARKER_START" "$SHELL_CONFIG" 2>/dev/null; then
-    warn "Shell integration already present in $SHELL_CONFIG"
+    warn "Shell integration already present (v5) in $SHELL_CONFIG"
     read -p "  Replace it? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # Remove existing block
         sed_inplace "/$MARKER_START/,/$MARKER_END/d" "$SHELL_CONFIG"
         rm -f "${SHELL_CONFIG}.bak"
-        # Append new block
-        echo "" >> "$SHELL_CONFIG"
-        cat "$SCRIPT_DIR/shell/claude-shell.sh" >> "$SHELL_CONFIG"
-        ok "Shell integration replaced in $SHELL_CONFIG"
     else
-        info "Skipping shell integration"
+        NEEDS_INSTALL=false
     fi
-else
+elif grep -q "$MARKER_OLD" "$SHELL_CONFIG" 2>/dev/null; then
+    warn "Old 3-mode shell integration found — upgrading to v5"
+    sed_inplace "/$MARKER_OLD/,/$MARKER_END_OLD/d" "$SHELL_CONFIG"
+    rm -f "${SHELL_CONFIG}.bak"
+fi
+
+if [ "$NEEDS_INSTALL" = true ]; then
     echo "" >> "$SHELL_CONFIG"
     cat "$SCRIPT_DIR/shell/claude-shell.sh" >> "$SHELL_CONFIG"
     ok "Shell integration added to $SHELL_CONFIG"
@@ -324,7 +342,6 @@ echo ""
 # ------------------------------------------------------------------------------
 # Auto-start service (optional)
 # ------------------------------------------------------------------------------
-echo ""
 read -p "Install auto-start service (proxy starts on boot)? (y/N) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -333,149 +350,71 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
         PLIST_FILE="$PLIST_DIR/com.claude-code.proxy.plist"
         mkdir -p "$PLIST_DIR"
         cp "$SCRIPT_DIR/service/com.claude-code.proxy.plist" "$PLIST_FILE"
-        # Replace placeholders with actual paths
         sed -i '' "s|VENV_PYTHON_PLACEHOLDER|$PROXY_DIR/venv/bin/python|g" "$PLIST_FILE"
         sed -i '' "s|PROXY_PY_PLACEHOLDER|$PROXY_DIR/proxy.py|g" "$PLIST_FILE"
         sed -i '' "s|PROXY_DIR_PLACEHOLDER|$PROXY_DIR|g" "$PLIST_FILE"
         launchctl load "$PLIST_FILE" 2>/dev/null
-        ok "launchd service installed — proxy will start on boot"
+        ok "launchd service installed"
     elif [ "$PLATFORM" = "linux" ]; then
         SYSTEMD_DIR="$HOME/.config/systemd/user"
         UNIT_FILE="$SYSTEMD_DIR/claude-code-proxy.service"
         mkdir -p "$SYSTEMD_DIR"
         cp "$SCRIPT_DIR/service/claude-code-proxy.service" "$UNIT_FILE"
-        # Replace placeholders with actual paths
         sed -i "s|VENV_PYTHON_PLACEHOLDER|$PROXY_DIR/venv/bin/python|g" "$UNIT_FILE"
         sed -i "s|PROXY_PY_PLACEHOLDER|$PROXY_DIR/proxy.py|g" "$UNIT_FILE"
         sed -i "s|PROXY_DIR_PLACEHOLDER|$PROXY_DIR|g" "$UNIT_FILE"
         systemctl --user daemon-reload
         systemctl --user enable claude-code-proxy
         systemctl --user start claude-code-proxy
-        ok "systemd service installed — proxy will start on boot"
+        ok "systemd service installed"
     fi
 else
-    info "Skipping auto-start service (proxy starts via shell function)"
+    info "Skipping auto-start (proxy starts via shell commands)"
 fi
 
 echo ""
 
 # ------------------------------------------------------------------------------
-# Plugins
-# ------------------------------------------------------------------------------
-info "Plugins to install (run these commands manually):"
-echo ""
-echo "  claude plugins:install feature-dev@claude-plugins-official"
-echo "  claude plugins:install code-review@claude-plugins-official"
-echo "  claude plugins:install commit-commands@claude-plugins-official"
-echo "  claude plugins:install security-guidance@claude-plugins-official"
-echo "  claude plugins:install hookify@claude-plugins-official"
-echo "  claude plugins:install frontend-design@claude-plugins-official"
-echo ""
-
-# ------------------------------------------------------------------------------
-# Test proxy + Z.AI connection
+# Test proxy
 # ------------------------------------------------------------------------------
 info "Testing proxy..."
 
-# Start proxy in background
 PYTHONUNBUFFERED=1 "$PROXY_DIR/venv/bin/python" -u "$PROXY_DIR/proxy.py" &>/tmp/claude-proxy.log &
 PROXY_PID=$!
 
-# Wait up to 10 seconds for proxy to be ready
 RETRIES=0
-MAX_WAIT=10
-while [ $RETRIES -lt $MAX_WAIT ]; do
-    if curl -s http://localhost:8082/health &>/dev/null; then
-        break
-    fi
+while [ $RETRIES -lt 10 ]; do
+    curl -s http://localhost:8082/health &>/dev/null && break
     sleep 1
     RETRIES=$((RETRIES + 1))
 done
 
 if kill -0 $PROXY_PID 2>/dev/null; then
-    # Check health
     HEALTH=$(curl -s http://localhost:8082/health 2>/dev/null)
     if echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['status'])" 2>/dev/null | grep -q "healthy"; then
         ok "Proxy is running and healthy!"
-        echo ""
-        echo "  Routing:"
-        echo "$HEALTH" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-for tier, dest in d['routing'].items():
-    print(f'    {tier:>8s} → {dest}')
-" 2>/dev/null
     else
         warn "Proxy started but health check failed"
     fi
-
-    # Test Z.AI connection
-    echo ""
-    info "Testing Z.AI connection..."
-    ZAI_TEST=$(curl -s -X POST http://localhost:8082/v1/messages \
-        -H "Content-Type: application/json" \
-        -H "x-api-key: test" \
-        -H "anthropic-version: 2023-06-01" \
-        -d '{"model":"claude-haiku-4-5-20251001","max_tokens":10,"messages":[{"role":"user","content":"Say hi"}]}' \
-        2>/dev/null)
-
-    if echo "$ZAI_TEST" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-if d.get('type') == 'message' or 'content' in d:
-    print('ok')
-elif 'error' in d:
-    print('error: ' + str(d['error']))
-else:
-    print('unknown')
-" 2>/dev/null | grep -q "ok"; then
-        ok "Z.AI GLM-5.1 connection working!"
-    else
-        warn "Z.AI connection test failed. Check your API key in ~/claude-code-proxy/.env"
-        echo "  You can test manually: curl http://localhost:8082/health"
-    fi
-
-    # Stop test proxy
     kill $PROXY_PID 2>/dev/null
 else
     warn "Proxy failed to start. Check /tmp/claude-proxy.log"
 fi
 
 echo ""
-echo -e "${BOLD}========================================${RESET}"
+echo -e "${BOLD}================================================${RESET}"
 echo -e "${GREEN}${BOLD}  Installation complete!${RESET}"
-echo -e "${BOLD}========================================${RESET}"
+echo -e "${BOLD}================================================${RESET}"
 echo ""
 echo "Next steps:"
-echo "  1. Run: source $SHELL_CONFIG"
-echo "  2. Choose your mode:"
-echo "     glm-on   → Hybrid: Sonnet/Haiku → Z.AI, Opus → Anthropic (default)"
-echo "     glm-full → Full GLM: tout → Z.AI direct"
-echo "     glm-off  → Full Claude: tout → Anthropic OAuth"
-echo "  3. Run: claude"
+echo "  1. source $SHELL_CONFIG"
+echo "  2. Choose a mode:"
+echo "     claude-full  → Full Claude (Anthropic OAuth)"
+echo "     glm-on       → Hybrid GLM (Sonnet→GLM-5.1, Haiku→GLM-4.7)"
+echo "     minimax-on   → Hybrid MiniMax (Sonnet/Haiku→MiniMax M2.7)"
+echo "     mix-on       → Split (Sonnet→GLM-5.1, Haiku→MiniMax M2.7)"
+echo "     glm-full     → Full GLM (all→Z.AI direct)"
+echo "  3. claude"
 echo ""
-echo "Commands:"
-echo "  glm-status  → Show current mode"
-echo "  glm-tokens  → Token usage stats (hybrid mode only)"
-echo "  glm-key     → Check Z.AI API key"
-echo "  glm-logs    → Proxy logs (hybrid mode only)"
-echo ""
-echo "Requirements:"
-echo "  - Claude Max subscription (for Opus 4.6 as main agent)"
-echo "  - Be logged in: claude login"
-echo ""
-echo "Next steps:"
-echo "  1. Run: source $SHELL_CONFIG"
-echo "  2. Run: claude"
-echo "     (The proxy starts automatically in hybrid mode)"
-echo ""
-echo "Routing modes:"
-echo "  glm-on     Hybrid: Sonnet/Haiku → Z.AI, Opus → Anthropic (default)"
-echo "  glm-full   Full GLM: tout → Z.AI direct (no proxy)"
-echo "  glm-off    Full Claude: tout → Anthropic OAuth"
-echo "  glm-status Show current mode"
-echo ""
-echo "Requirements:"
-echo "  - Claude Max subscription (for Opus 4.6 as main agent)"
-echo "  - Be logged in: claude login"
+echo "Utilities: proxy-status | proxy-tokens | proxy-keys | proxy-logs"
 echo ""

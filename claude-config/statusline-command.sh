@@ -40,17 +40,20 @@ fi
 cost=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 cost_fmt=$(printf "$%.4f" "$cost" 2>/dev/null || echo "\$0.00")
 
-# Routing state (3-mode: off=CLAUDE, on=HYBRID, full=GLM)
-routing_file="$HOME/.claude/glm-routing"
+# Routing state
+routing_file="$HOME/.claude/proxy-routing"
 if [ -f "$routing_file" ]; then
     routing_state=$(cat "$routing_file" 2>/dev/null | tr -d '[:space:]')
     case "$routing_state" in
-        off)   routing_label="CLAUDE" ;;
-        full)  routing_label="GLM" ;;
-        on|*)  routing_label="HYBRID" ;;
+        off)     routing_label="CLAUDE" ;;
+        full)    routing_label="GLM-FULL" ;;
+        on)      routing_label="GLM" ;;
+        minimax) routing_label="MINIMAX" ;;
+        mix)     routing_label="MIX" ;;
+        *)       routing_label="$routing_state" ;;
     esac
 else
-    routing_label="HYBRID"
+    routing_label="CLAUDE"
 fi
 
 # Build output
