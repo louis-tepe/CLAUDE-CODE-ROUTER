@@ -481,17 +481,17 @@ def get_provider_config(model_name: str):
 
     if tier == "opus":
         if OPUS_BASE_URL:
-            return (OPUS_API_KEY, OPUS_BASE_URL, f"Opus→{PROVIDER_OPUS_MODEL}", opus_semaphore)
+            return (OPUS_API_KEY, OPUS_BASE_URL, PROVIDER_OPUS_MODEL, opus_semaphore)
         return None  # Opus → Anthropic OAuth
 
     elif tier == "sonnet":
         if SONNET_BASE_URL:
-            return (SONNET_API_KEY, SONNET_BASE_URL, f"Sonnet→{PROVIDER_SONNET_MODEL}", sonnet_semaphore)
+            return (SONNET_API_KEY, SONNET_BASE_URL, PROVIDER_SONNET_MODEL, sonnet_semaphore)
         return None
 
     elif tier == "haiku":
         if HAIKU_BASE_URL:
-            return (HAIKU_API_KEY, HAIKU_BASE_URL, f"Haiku→{PROVIDER_HAIKU_MODEL}", haiku_semaphore)
+            return (HAIKU_API_KEY, HAIKU_BASE_URL, PROVIDER_HAIKU_MODEL, haiku_semaphore)
         return None
 
     # Unknown model → passthrough to Anthropic
