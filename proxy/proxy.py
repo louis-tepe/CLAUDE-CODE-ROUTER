@@ -1019,7 +1019,7 @@ async def proxy_messages(request: Request):
                             else:
                                 fb_body = await fb_response.aread()
                                 await fb_response.aclose()
-                                log_err(rid, f"Anthropic fallback also failed: {fb_response.status_code}")
+                                log_err(rid, f"Anthropic fallback also failed: {fb_response.status_code}: {fb_body.decode(errors='replace')[:500]}")
                                 return Response(content=fb_body, status_code=fb_response.status_code, headers=strip_encoding_headers(fb_response.headers))
 
                         return Response(content=body, status_code=response.status_code, headers=strip_encoding_headers(response.headers))
@@ -1063,7 +1063,7 @@ async def proxy_messages(request: Request):
                                 if inp or out:
                                     await stats.record_tokens("anthropic", inp, out)
                             else:
-                                log_err(rid, f"Anthropic fallback also failed: {fb_response.status_code}")
+                                log_err(rid, f"Anthropic fallback also failed: {fb_response.status_code}: {fb_response.text[:500]}")
                             return Response(
                                 content=fb_response.content,
                                 status_code=fb_response.status_code,
@@ -1124,7 +1124,7 @@ async def proxy_messages(request: Request):
                             else:
                                 log_ok(rid, f"Anthropic fallback OK ({elapsed:.1f}s)")
                         else:
-                            log_err(rid, f"Anthropic fallback also failed: {fb_response.status_code}")
+                            log_err(rid, f"Anthropic fallback also failed: {fb_response.status_code}: {fb_response.text[:500]}")
                         return Response(content=fb_response.content, status_code=fb_response.status_code, headers=strip_encoding_headers(fb_response.headers))
                     except Exception as fb_err:
                         log_err(rid, f"Anthropic fallback also failed: {fb_err}")
