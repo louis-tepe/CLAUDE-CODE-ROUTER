@@ -110,6 +110,7 @@ _proxy_start() {
 
   echo "Starting proxy ($mode)..."
   env "${env_args[@]}" nohup "$PROXY_VENV" -u "$PROXY_PY" >"$PROXY_LOG" 2>&1 &
+  disown 2>/dev/null
   sleep 2
   if lsof -i:8082 -sTCP:LISTEN &>/dev/null; then
     echo "Proxy started on port 8082 ($mode)"
@@ -124,6 +125,12 @@ _proxy_stop() {
   pid=$(lsof -ti:8082 -sTCP:LISTEN 2>/dev/null)
   if [ -n "$pid" ]; then
     kill "$pid" 2>/dev/null
+    # Wait for port to be released (max 5s)
+    local i=0
+    while lsof -i:8082 -sTCP:LISTEN &>/dev/null && [ $i -lt 10 ]; do
+      sleep 0.5
+      i=$((i + 1))
+    done
     echo "Proxy stopped (PID $pid)"
   fi
 }
