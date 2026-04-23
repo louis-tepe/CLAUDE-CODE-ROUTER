@@ -5,6 +5,8 @@
 #   glm-full   -> Full GLM (tout -> Z.AI direct, config officielle)
 #   minimax-on -> Hybride MiniMax (Sonnet/Haiku -> MiniMax M2.7, Opus -> Anthropic)
 #   mix-on     -> Split (Sonnet -> GLM-5.1, Haiku -> MiniMax M2.7, Opus -> Anthropic)
+#   mimo-on    -> Hybride MiMo (Sonnet/Haiku -> MiMo-V2.5-Pro, Opus -> Anthropic)
+#   mimo-full  -> Full MiMo (tout -> Xiaomi MiMo direct, mimo-v2.5-pro)
 #
 # Config:
 #   Mode state:    ~/.claude/proxy-routing
@@ -252,6 +254,20 @@ claude() {
       export DISABLE_PROMPT_CACHING=1
       _mcp_inject_zai "$key"
       ;;
+    mimo_full)
+      # Direct Xiaomi MiMo — no proxy (same model on all tiers)
+      local key=$(_read_key_file ".mimo-api-key")
+      if [ -z "$key" ]; then
+        echo "ERROR: MiMo API key not found at ~/.claude/.mimo-api-key"
+        return 1
+      fi
+      export ANTHROPIC_BASE_URL=https://token-plan-ams.xiaomimimo.com/anthropic
+      export ANTHROPIC_AUTH_TOKEN="$key"
+      export API_TIMEOUT_MS=3000000
+      export ANTHROPIC_DEFAULT_OPUS_MODEL=mimo-v2.5-pro
+      export ANTHROPIC_DEFAULT_SONNET_MODEL=mimo-v2.5-pro
+      export ANTHROPIC_DEFAULT_HAIKU_MODEL=mimo-v2.5-pro
+      ;;
     off)
       # Full Anthropic — nothing to configure
       ;;
@@ -291,6 +307,7 @@ _switch_mode() {
 glm-on()     { _switch_mode on; }
 minimax-on() { _switch_mode minimax; }
 mix-on()     { _switch_mode mix; }
+mimo-on()    { _switch_mode mimo; }
 
 glm-full() {
   local key=$(_read_key_file ".zai-api-key")
@@ -303,6 +320,22 @@ glm-full() {
   echo ""
   echo "Mode FULL GLM active"
   echo "  Tout -> Z.AI direct (config officielle)"
+  echo ""
+  echo "Relance 'claude' pour appliquer."
+}
+
+mimo-full() {
+  local key=$(_read_key_file ".mimo-api-key")
+  if [ -z "$key" ]; then
+    echo "ERROR: MiMo API key not found at ~/.claude/.mimo-api-key"
+    return 1
+  fi
+  echo "mimo_full" > "$PROXY_ROUTING_FILE"
+  _proxy_stop
+  echo ""
+  echo "Mode FULL MIMO active"
+  echo "  Tout -> Xiaomi MiMo direct (token-plan-ams.xiaomimimo.com)"
+  echo "  Models: opus/sonnet/haiku = mimo-v2.5-pro"
   echo ""
   echo "Relance 'claude' pour appliquer."
 }
@@ -349,11 +382,23 @@ proxy-status() {
       echo "  Haiku  -> MiniMax M2.7  (vitesse, caching active)"
       echo "  Opus   -> Anthropic OAuth"
       ;;
+    mimo)
+      echo "  Mode:    HYBRIDE MIMO"
+      echo "  Sonnet/Haiku -> Xiaomi MiMo-V2.5-Pro (proxy :8082)"
+      echo "  Opus         -> Anthropic OAuth"
+      echo "  Caching: active"
+      ;;
     full)
       echo "  Mode:    FULL GLM"
       echo "  Tout -> Z.AI direct (https://api.z.ai/api/anthropic)"
       echo "  Models: opus/sonnet=glm-5.1, haiku=glm-4.7"
       echo "  Caching: disabled"
+      ;;
+    mimo_full)
+      echo "  Mode:    FULL MIMO"
+      echo "  Tout -> Xiaomi MiMo direct (https://token-plan-ams.xiaomimimo.com/anthropic)"
+      echo "  Models: opus/sonnet/haiku = mimo-v2.5-pro"
+      echo "  Caching: active"
       ;;
     off)
       echo "  Mode:    FULL CLAUDE"
@@ -429,7 +474,7 @@ proxy-status() {
 
 proxy-tokens() {
   local state=$(_proxy_state)
-  if [ "$state" = "off" ] || [ "$state" = "full" ]; then
+  if [ "$state" = "off" ] || [ "$state" = "full" ] || [ "$state" = "mimo_full" ]; then
     echo "Disponible uniquement en mode proxy (actuel: $state)"
     return 1
   fi
