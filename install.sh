@@ -83,7 +83,7 @@ echo "      claude-full  = Full Claude (all → Anthropic OAuth)"
 echo "      glm-on       = Hybrid GLM (Sonnet → GLM-5.1, Haiku → GLM-4.7)"
 echo "      minimax-on   = Hybrid MiniMax (Sonnet/Haiku → MiniMax M2.7)"
 echo "      mimo-on      = Hybrid MiMo (Sonnet/Haiku → MiMo-V2.5-Pro)"
-echo "      mix-on       = Split (Sonnet → GLM-5.1, Haiku → MiniMax M2.7)"
+echo "      mix-on       = Split (Sonnet → MiMo-V2.5-Pro, Haiku → MiniMax M2.7)"
 echo "      glm-full     = Full GLM (all → Z.AI direct)"
 echo "      mimo-full    = Full MiMo (all → Xiaomi MiMo direct)"
 echo ""
@@ -250,7 +250,7 @@ if [ -f "$CLAUDE_DIR/.mimo-api-key" ] && [ -s "$CLAUDE_DIR/.mimo-api-key" ]; the
     ok "MiMo API key already configured"
 else
     echo ""
-    echo "  Xiaomi MiMo API key (for MiMo modes). Get one at: https://mimo.mi.com/"
+    echo "  Xiaomi MiMo API key (for MiMo/mix modes). Get one at: https://mimo.mi.com/"
     echo "  Key format: tp-xxx (Token Plan) or sk-xxx (Pay-as-you-go)"
     read -p "  Enter your MiMo API key (or press Enter to skip): " MIMO_KEY
     if [ -n "$MIMO_KEY" ]; then
@@ -258,7 +258,7 @@ else
         chmod 600 "$CLAUDE_DIR/.mimo-api-key"
         ok "MiMo API key saved"
     else
-        warn "Skipped — MiMo modes won't work without a MiMo key"
+        warn "Skipped — MiMo/mix modes won't work without a MiMo key"
     fi
 fi
 
@@ -432,7 +432,7 @@ echo "     claude-full  → Full Claude (Anthropic OAuth)"
 echo "     glm-on       → Hybrid GLM (Sonnet→GLM-5.1, Haiku→GLM-4.7)"
 echo "     minimax-on   → Hybrid MiniMax (Sonnet/Haiku→MiniMax M2.7)"
 echo "     mimo-on      → Hybrid MiMo (Sonnet/Haiku→MiMo-V2.5-Pro)"
-echo "     mix-on       → Split (Sonnet→GLM-5.1, Haiku→MiniMax M2.7)"
+echo "     mix-on       → Split (Sonnet→MiMo-V2.5-Pro, Haiku→MiniMax M2.7)"
 echo "     glm-full     → Full GLM (all→Z.AI direct)"
 echo "     mimo-full    → Full MiMo (all→Xiaomi MiMo direct)"
 echo "  3. claude"

@@ -4,7 +4,7 @@
 #   glm-on     -> Hybride GLM (Sonnet -> GLM-5.1, Haiku -> GLM-4.7, Opus -> Anthropic)
 #   glm-full   -> Full GLM (tout -> Z.AI direct, config officielle)
 #   minimax-on -> Hybride MiniMax (Sonnet/Haiku -> MiniMax M2.7, Opus -> Anthropic)
-#   mix-on     -> Split (Sonnet -> GLM-5.1, Haiku -> MiniMax M2.7, Opus -> Anthropic)
+#   mix-on     -> Split (Sonnet -> MiMo-V2.5-Pro, Haiku -> MiniMax M2.7, Opus -> Anthropic)
 #   mimo-on    -> Hybride MiMo (Sonnet/Haiku -> MiMo-V2.5-Pro, Opus -> Anthropic)
 #   mimo-full  -> Full MiMo (tout -> Xiaomi MiMo direct, mimo-v2.5-pro)
 #
@@ -377,9 +377,9 @@ proxy-status() {
       echo "  Caching: active"
       ;;
     mix)
-      echo "  Mode:    SPLIT (GLM + MiniMax)"
-      echo "  Sonnet -> Z.AI GLM-5.1  (intelligence, no caching)"
-      echo "  Haiku  -> MiniMax M2.7  (vitesse, caching active)"
+      echo "  Mode:    SPLIT GLOBAL (MiMo + MiniMax)"
+      echo "  Sonnet -> Xiaomi MiMo-V2.5-Pro  (intelligence, caching active)"
+      echo "  Haiku  -> MiniMax M2.7          (vitesse, caching active)"
       echo "  Opus   -> Anthropic OAuth"
       ;;
     mimo)

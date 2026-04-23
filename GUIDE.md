@@ -104,7 +104,7 @@ Le proxy ne sait pas quel bouton tu as appuye. Il recoit juste "envoie ca a cett
 | `glm-on` | GLM-5.1 | GLM-4.7 | Anthropic | non | Usage quotidien |
 | `minimax-on` | M2.7 | M2.7 | Anthropic | oui | Max economie |
 | `mimo-on` | MiMo-V2.5-Pro | MiMo-V2.5-Pro | Anthropic | oui | Token Plan Xiaomi (credits) |
-| `mix-on` | GLM-5.1 | M2.7 | Anthropic | partiel | Optimal (qualite + cout) |
+| `mix-on` | MiMo-V2.5-Pro | M2.7 | Anthropic | oui | Optimal (qualite + cout) |
 | `glm-full` | Z.AI direct | Z.AI direct | Z.AI direct | non | Z.AI only, pas d'Anthropic |
 | `mimo-full` | MiMo direct | MiMo direct | MiMo direct | oui | Token Plan Xiaomi sur tous tiers |
 
@@ -116,7 +116,7 @@ Le proxy ne sait pas quel bouton tu as appuye. Il recoit juste "envoie ca a cett
 | `glm-on` | $0.36 | $1.70 | $2.06 | -55% |
 | `minimax-on` | $0.09 | $0.60 | $0.69 | -85% |
 | `mimo-on` | $0.25 | $1.25 | $1.50 | -67% (PAYG, sinon forfait) |
-| `mix-on` | $0.36 | $0.90 | $1.26 | -72% |
+| `mix-on` | $0.25 | $0.90 | $1.15 | -75% |
 
 ---
 

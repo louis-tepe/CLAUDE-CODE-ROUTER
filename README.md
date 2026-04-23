@@ -10,7 +10,7 @@
 | `glm-on` | **Hybrid GLM** | Sonnet → GLM-5.1, Haiku → GLM-4.7, Opus → Anthropic |
 | `minimax-on` | **Hybrid MiniMax** | Sonnet/Haiku → MiniMax M2.7, Opus → Anthropic |
 | `mimo-on` | **Hybrid MiMo** | Sonnet/Haiku → MiMo-V2.5-Pro, Opus → Anthropic |
-| `mix-on` | **Split** | Sonnet → GLM-5.1, Haiku → MiniMax M2.7, Opus → Anthropic |
+| `mix-on` | **Split** | Sonnet → MiMo-V2.5-Pro, Haiku → MiniMax M2.7, Opus → Anthropic |
 | `glm-full` | **Full GLM** | All → Z.AI direct (official config, no proxy) |
 | `mimo-full` | **Full MiMo** | All → Xiaomi MiMo direct (mimo-v2.5-pro, no proxy) |
 
@@ -31,8 +31,8 @@
   mimo-on           │  HYBRID MIMO                                  │
                     │  Opus → Anthropic | Sonnet/Haiku → MiMo-V2.5  │
                     ├──────────────────────────────────────────────┤
-  mix-on            │  SPLIT (best of both)                         │
-                    │  Opus → Anthropic | Sonnet → GLM-5.1          │
+  mix-on            │  SPLIT GLOBAL (MiMo + MiniMax)                │
+                    │  Opus → Anthropic | Sonnet → MiMo-V2.5-Pro    │
                     │                   | Haiku  → MiniMax M2.7     │
                     ├──────────────────────────────────────────────┤
   glm-full          │  FULL GLM                                     │
@@ -128,7 +128,7 @@ claude
 | `glm-on` | Hybrid GLM (Sonnet → GLM-5.1, Haiku → GLM-4.7) |
 | `minimax-on` | Hybrid MiniMax (Sonnet/Haiku → MiniMax M2.7) |
 | `mimo-on` | Hybrid MiMo (Sonnet/Haiku → MiMo-V2.5-Pro) |
-| `mix-on` | Split (Sonnet → GLM-5.1, Haiku → MiniMax M2.7) |
+| `mix-on` | Split (Sonnet → MiMo-V2.5-Pro, Haiku → MiniMax M2.7) |
 | `glm-full` | Full GLM (all → Z.AI direct) |
 | `mimo-full` | Full MiMo (all → Xiaomi MiMo direct) |
 | `claude-full` | Full Claude (all → Anthropic) |
@@ -153,7 +153,7 @@ claude
 │   ├── on.env                      # GLM hybrid config
 │   ├── minimax.env                 # MiniMax hybrid config
 │   ├── mimo.env                    # MiMo hybrid config
-│   └── mix.env                     # Split GLM+MiniMax config
+│   └── mix.env                     # Split MiMo+MiniMax config
 ├── .zai-api-key                    # Z.AI API key
 ├── .minimax-api-key                # MiniMax API key
 ├── .mimo-api-key                   # Xiaomi MiMo API key
